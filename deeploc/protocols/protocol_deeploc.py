@@ -30,28 +30,12 @@ from pyworkflow.protocol import params
 
 from pwchem.objects import Sequence, SequenceROI, SetOfSequenceROIs
 
-from .. import Plugin as iedbPlugin
-from ..constants import MHCI_alleles_dic
-from ..utils import getAllMHCIAlleles
-from ..protocols.protocol_mhc_ii_predict import ProtMHCIIPrediction
+from pwchem.__init__ import Plugin as pwchemPlugin
 
-SEQ, SEQROIS = 0, 1
-RANK, IC50, TOPP, NTOP = 0, 1, 2, 3
+class ProtDeepLoc(EMProtocol):
+  """"""
+  _label = 'deeploc protein subcellular localization prediction'
 
-class ProtMHCIPrediction(ProtMHCIIPrediction):
-  """Run a prediction using mhc-i package from IEDB to predict MHC-I epitopes over a sequence
-  or to label a set of sequence ROIs with the alleles found on them"""
-  _label = 'mhc-i prediction'
-
-  MINLEN, MAXLEN = 8, 14
-  selMap = {RANK: 'rank', IC50: 'ic50', TOPP: 'topPerc', NTOP: 'topN'}
-
-  _mhciMethodsDic = {'IEDB recommended': 'netmhcpan', 'Consensus-2.18': 'consensus',
-                     'NetMHC_Cons': 'netmhccons', 'ANN-4.0': 'ann', 'SMMPMBEC-1.0': 'smmpmbec', 'SMM-1.0': 'smm',
-                     'Combinatorial Library-1.0': 'comblib_sidney2008', 'PickPocket-1.1': 'pìckpocket'}
-  _species = ['Chimpanzee', 'Cow', 'Gorilla', 'Human', 'Macaque', 'Mouse', 'Pig']
-  _alleleGroups = ['Frequent (>1%)', 'Representative HLA supertypes', 'Most frequent A, B', 'Custom']
-  _selTypes = ['Percentile rank', 'IC50', 'Top x%', 'Top x']
 
   def _defineParams(self, form):
     form.addSection(label='Input')

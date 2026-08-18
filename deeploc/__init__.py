@@ -35,6 +35,7 @@ from pwem import Config as emConfig
 # Plugin imports
 from pwchem import Plugin as pwchemPlugin
 from pwchem.utils import insistentRun
+from scipion.install.funcs import InstallHelper
 
 from .bibtex import _bibtexStr
 from .constants import *
@@ -52,31 +53,69 @@ class Plugin(pwchemPlugin):
         cls._defineVar(DEEPLOC_DIC['tar'], None)
 
     @classmethod
-    def defineBinaries(cls, env):
+    def defineBinaries(cls, env, default=True):
         if cls.checkVarPath(DEEPLOC_DIC, 'tar'):
-            cls.addDeepLocPackage(env, tarPath=cls.getVar(DEEPLOC_DIC['tar']))
+            cls.addDeepLocPackage(
+                env,
+                tarPath=cls.getVar(DEEPLOC_DIC['tar']),
+                default=default
+            )
+
         elif cls.checkVarPath(DEEPLOC_DIC, 'home'):
-            cls.addDeepLocPackage(env, deeplocHome=cls.getVar(DEEPLOC_DIC['home']))
+            cls.addDeepLocPackage(
+                env,
+                deeplocHome=cls.getVar(DEEPLOC_DIC['home']),
+                default=default
+            )
 
     @classmethod
     def addDeepLocPackage(cls, env, deeplocHome=None, tarPath=None, default=True):
-        """ This function provides the neccessary commands for installing the DeepLoc prediction program. """
+
         DEEPLOC_INSTALLED = '%s_installed' % DEEPLOC_DIC['name']
-        emHome = os.path.join(emConfig.EM_ROOT, cls.getEnvName(DEEPLOC_DIC))
+
+        emHome = os.path.join(
+            emConfig.EM_ROOT,
+            cls.getEnvName(DEEPLOC_DIC)
+        )
 
         installationCmd = ''
+
         if not deeplocHome and tarPath:
             deeplocHome = emHome
-            installationCmd += f'tar -xf {tarPath} -C {deeplocHome} && ' \
-                                                 f'mv {deeplocHome}/mhc_i/* {deeplocHome} && rm -r {deeplocHome}/mhc_i && '
 
-        if deeplocHome != emHome:
-            installationCmd += f"mv {deeplocHome}/* {emHome} && rm -r {deeplocHome} && "
-        installationCmd += f"cd {emHome} && touch {DEEPLOC_INSTALLED}"
+            installationCmd += (
+                f"mkdir -p {emHome} && "
+                f"tar -xf {tarPath} -C {emHome} && "
+                f"mv {emHome}/deeploc2_package/* {emHome}/ && "
+                f"rm -rf {emHome}/deeploc2_package && "
+            )
 
-        env.addPackage(DEEPLOC_DIC['name'], version=DEEPLOC_DIC['version'],
-                                    commands=[(installationCmd, os.path.join(emHome, DEEPLOC_INSTALLED))], tar='void.tgz',
-                                    default=default, buildDir=os.path.split(deeplocHome)[-1])
+        elif deeplocHome != emHome:
+            installationCmd += (
+                f"mkdir -p {emHome} && "
+                f"cp -r {deeplocHome}/* {emHome}/ && "
+            )
+
+        installer = InstallHelper(
+            DEEPLOC_DIC['name'],
+            packageHome=emHome,
+            packageVersion=DEEPLOC_DIC['version']
+        )
+
+        installer.getCondaEnvCommand(
+            DEEPLOC_DIC['name'],
+            binaryVersion=DEEPLOC_DIC['version'],
+            pythonVersion='3.8'
+        ).addCommand(
+            installationCmd +
+            f"cd {emHome} && pip install .",
+            DEEPLOC_INSTALLED
+        ).addPackage(
+            env,
+            dependencies=['conda'],
+            default=default
+        )
+
 
     @classmethod
     def getDefaultDir(cls, softDic, fn=""):

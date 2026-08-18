@@ -19,9 +19,9 @@ Once you obtain the software file (a tar.gz) you have several options to help Sc
 Option 1) Edit the scipion.conf file and add the variables:
  - DEEPLOC_TAR = <PathToDeepLoc-Tar> (deeploc-2.1.All.tar.gz)
 
-This way, Scipion will untar and move the corresponding files to the scipion/software/em folder and install mhc-i.
+This way, Scipion will untar and move the corresponding files to the scipion/software/em folder and install deeploc.
 
-Option 2) If you have unzipped the deeploc2.1 tars yourself you can either:
+Option 2) If you have unzipped the deeploc2_package tars yourself you can either:
 
 2.1) Move the folder (of the form deeploc2_package) to the scipion/software/em folder. Scipion will find it there.
 
