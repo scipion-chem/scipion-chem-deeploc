@@ -25,5 +25,10 @@
 # *
 # ***********************************************************************
 
-DEEPLOC_DIC = {'name': 'deeploc',    'version': '2.1',
-            'home': 'DEEPLOC_HOME', 'tar': 'DEEPLOC_TAR'}
+DEEPLOC_DIC = {
+    'name': 'deeploc',
+    'version': '2.1',
+    'home': 'DEEPLOC_HOME',
+    'tar': 'DEEPLOC_TAR',
+    'pattern': 'deeploc'
+}

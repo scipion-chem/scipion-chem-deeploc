@@ -21,21 +21,18 @@ with open('requirements.txt') as f:
     requirements = f.read().splitlines()
 
 setup(
-    name='scipion-chem-deeploc',
-    version='3.0.0',
-    description='Scipion framework plugin for the use of DeepLoc 2.1',
-    long_description=long_description,
-    url='https://github.com/scipion-chem/scipion-chem-deeploc',
-    author='Blanca Pueche',
-    author_email='scipion@cnb.csic.es',
-    keywords='scipion',
+    name='scipion-chem-deeploc',  # Required
+    version='2.1',  # Required
+    description='Scipion plugin in order to use the DeepLoc software',  # Required
+    long_description=long_description,  # Optional
+    url='https://github.com/scipion-chem/scipion-chem-deeploc',  # Optional
+    author='Blanca Pueche',  # Optional
+    author_email='blanca.pueche@cnb.csic.es',  # Optional
+    keywords='scipion DeepLoc scipion-3.0 cheminformatics',  # Optional
     packages=find_packages(),
     install_requires=[requirements],
-    include_package_data=True,
-    package_data={
-       'deeploc': ['dtu_logo.png'],
-    },
-    entry_points={
-        'pyworkflow.plugin': 'deeploc = deeploc'
+    entry_points={'pyworkflow.plugin': 'deeploc = deeploc'},
+    package_data={  # Optional
+       'deeploc': [ 'protocols.conf'],
     }
 )

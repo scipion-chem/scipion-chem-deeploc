@@ -72,8 +72,7 @@ class Plugin(pwchemPlugin):
 
         if deeplocHome != emHome:
             installationCmd += f"mv {deeplocHome}/* {emHome} && rm -r {deeplocHome} && "
-        installationCmd += f"cd {emHome} && ./configure && "
-        installationCmd += f"touch {DEEPLOC_INSTALLED}"
+        installationCmd += f"cd {emHome} && touch {DEEPLOC_INSTALLED}"
 
         env.addPackage(DEEPLOC_DIC['name'], version=DEEPLOC_DIC['version'],
                                     commands=[(installationCmd, os.path.join(emHome, DEEPLOC_INSTALLED))], tar='void.tgz',
