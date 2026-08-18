@@ -24,9 +24,4 @@
 # *
 # **************************************************************************
 
-from .protocol_bepipred_predict import ProtBepiPredPrediction
 from .protocol_mhc_i_predict import ProtMHCIPrediction
-from .protocol_mhc_ii_predict import ProtMHCIIPrediction
-from .protocol_mhc_population_coverage import ProtMHCPopulationCoverage
-from .protocol_ellipro_predict import ProtElliProPrediction
-from .protocol_immunogenicity_I_predict import ProtImmunogenicityPrediction
