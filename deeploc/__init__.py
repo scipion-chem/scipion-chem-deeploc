@@ -108,7 +108,9 @@ class Plugin(pwchemPlugin):
             pythonVersion='3.8'
         ).addCommand(
             installationCmd +
-            f"cd {emHome} && pip install .",
+            f"{cls.getEnvActivationCommand(DEEPLOC_DIC)} && "
+            f"cd {emHome} && "
+            "pip install .",
             DEEPLOC_INSTALLED
         ).addPackage(
             env,

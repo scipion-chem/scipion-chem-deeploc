@@ -24,4 +24,4 @@
 # *
 # **************************************************************************
 
-from .protocol_deeploc import ProtMHCIPrediction
+from .protocol_deeploc import ProtDeepLoc

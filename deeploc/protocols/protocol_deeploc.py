@@ -23,14 +23,21 @@
 # *  e-mail address 'scipion@cnb.csic.es'
 # *
 # **************************************************************************
-
+import glob
 import os
+import pandas as pd
 
+from pwem.protocols import EMProtocol
+from pyworkflow.object import String
 from pyworkflow.protocol import params
+from Bio.PDB import PDBParser, MMCIFParser, PPBuilder
 
-from pwchem.objects import Sequence, SequenceROI, SetOfSequenceROIs
+from pwem.objects.data import AtomStruct, SetOfAtomStructs
 
 from pwchem.__init__ import Plugin as pwchemPlugin
+
+from deeploc import DEEPLOC_DIC
+
 
 class ProtDeepLoc(EMProtocol):
   """"""
@@ -39,178 +46,172 @@ class ProtDeepLoc(EMProtocol):
 
   def _defineParams(self, form):
     form.addSection(label='Input')
-    iGroup = self._defineInputParams(form)
 
-    pGroup = form.addGroup('Parameters')
-    pGroup.addParam('method', params.EnumParam, label='Prediction method: ',
-                    default=0, choices=list(self._mhciMethodsDic.keys()),
-                    help="Prediction method to use for the MHC-I binding prediction over the protein sequence.")
-    pGroup.addParam('predMode', params.EnumParam, label='Prediction mode: ', condition='method==0',
-                    default=0, choices=['Binding Affinity', 'Elution'],
-                    help="Whether to predict the binding affinity or an elution score.")
+    form.addParam('inputType', params.EnumParam, label='Input format: ',
+                    default=0, choices=['AtomStruct', 'SetOfAtomStructs'],
+                    help="Input format.")
 
-    pGroup.addParam('specie', params.EnumParam, label='Host species: ', expertLevel=params.LEVEL_ADVANCED,
-                    default=3, choices=self._species,
-                    help="Host specie  to predict the MHC-I epitopes on.")
-    pGroup.addParam('lengths', params.StringParam, label='Peptide lengths: ', default='9',
-                    help="Available lengths to include in the analysis."
-                         "You can include several lengths as comma separated  (11, 12,13)"
-                         f"Lenght limits are [{self.MINLEN}, {self.MAXLEN}]")
-
-    pGroup.addParam('alleleGroup', params.EnumParam, label='Select allele groups: ', condition='specie==3',
-                    default=2, choices=self._alleleGroups,
-                    help="Select usual groups of human alleles to perform the analysis on")
-    pGroup.addParam('alleleCustom', params.StringParam, label='Select alleles to add: ',
-                    condition='specie!=3 or alleleGroup==3',
-                    help="Host specie  to predict the MHC-I epitopes on.")
-
-    sGroup = form.addGroup('Selection')
-    sGroup.addParam('mergeAlleles', params.BooleanParam, label='Merge alleles: ', default=True,
-                    expertLevel=params.LEVEL_ADVANCED, condition='inputSource==0',
-                    help="Merges same epitope sequences predicted to interact with different alleles into the same "
-                         "sequence ROI")
-
-    sGroup.addParam('selType', params.EnumParam, label='Select output peptides by: ',
-                    default=0, choices=self._selTypes,
-                    help="Select output peptides in the chosen manner")
-    sGroup.addParam('rank', params.FloatParam, label='Percentile rank threshold: ', default=1, condition='selType==0',
-                    help="Predicted percentile rank threshold (<=)")
-    sGroup.addParam('ic50', params.FloatParam, label='IC50 threshold (nM): ', default=500, condition='selType==1',
-                    help="Predicted IC50 threshold (<=)")
-    sGroup.addParam('topPerc', params.FloatParam, label='Top percentage threshold (%): ', default=2,
-                    condition='selType==2', help="Select top x% peptides based on percentile rank")
-    sGroup.addParam('topN', params.IntParam, label='Top threshold: ', default=5, condition='selType==3',
-                    help="Select top x peptides based on percentile rank")
-
+    form.addParam('inputStruct', params.PointerParam, allowsNull=True,
+                  pointerClass='AtomStruct', condition='inputType==0',
+                  label="Input structure: ",
+                  help='Select the reference structure.')
+    form.addParam('inputSet', params.PointerParam, allowsNull=True,
+                  pointerClass='SetOfAtomStructs', condition='inputType==1',
+                  label="Input structures: ",
+                  help='Select the reference structures.')
 
   def _insertAllSteps(self):
-    self._insertFunctionStep(self.mhcStep)
+    self._insertFunctionStep(self.createInputFileStep)
+    self._insertFunctionStep(self.runDeepLocStep)
     self._insertFunctionStep(self.createOutputStep)
 
-  def mhcStep(self):
-    inFile = self.writeInputFasta()
-    oFile = self.getMHCOutputFile()
+  def createInputFileStep(self):
+    fastaFile = self._getExtraPath("input.fasta")
 
-    method = self._mhciMethodsDic[self.getEnumText('method')]
-    if self.method.get() == 0:
-        pMode = 'ba' if self.predMode.get() == 0 else 'el'
-        method += f'_{pMode}'
-    selAlleles = self.getSelectedAlleles()
-    lenList = self.getLenghts()
+    with open(fastaFile, "w") as f:
+      if self.inputType.get() == 0:
+        self.writeStructureFasta(self.inputStruct.get(), f)
+      else:
+        for atomStruct in self.inputSet.get():
+          self.writeStructureFasta(atomStruct, f)
 
-    alDic = getAllMHCIAlleles(method, specie=self.getEnumText('specie').lower())
-    fullAlList, fullLenList = self.filterAlleles(alDic, selAlleles, lenList)
-    fullAlStr, fullLenStr = ','.join(fullAlList), ','.join(fullLenList)
 
-    mhcArgs = f'{method} {fullAlStr} {fullLenStr} {inFile} > {oFile} '
+  def runDeepLocStep(self):
+    fastaFile = self._getExtraPath("input.fasta")
+    outFile = self._getPath('outputs')
 
-    iedbPlugin.runMHC_I(self, mhcArgs)
+    args = [
+        '-f', os.path.abspath(fastaFile),
+        '-o', os.path.abspath(outFile),
+        '-p'
+    ]
+
+    pwchemPlugin.runCondaCommand(
+        self,
+        args=" ".join(args),
+        condaDic=DEEPLOC_DIC,
+        program="deeploc2",
+        cwd=os.path.abspath(pwchemPlugin.getVar(DEEPLOC_DIC['home']))
+    )
 
   def createOutputStep(self):
-    epiDic = self.parseResults(self.getMHCOutputFile())
+    outPath = self._getPath('outputs')
+    outCsv = glob.glob(os.path.join(outPath, 'results*.csv'))
+    df = pd.read_csv(outCsv[0])
 
-    inpSeq = self.inputSequence.get()
-    outROIs = SetOfSequenceROIs(filename=self._getPath('sequenceROIs.sqlite'))
-    method = f"MHCI_{self.getEnumText('method')}"
+    predictions = {}
 
-    if self.inputSource.get() == SEQ:
-      epiDic = epiDic['1']
-      for (idxI, epitope) in epiDic:
-        idxs = [idxI, idxI + len(epitope) - 1]
-        roiSeq = Sequence(sequence=epitope, name='ROI_{}-{}'.format(*idxs), id='ROI_{}-{}'.format(*idxs),
-                          description=f'MHC-I TepiTool epitope')
+    for _, row in df.iterrows():
+        predictions[str(row['Protein_ID'])] = {
+            'localizations': row['Localizations'],
+            'signals': row['Signals'],
+            'membraneTypes': row['Membrane types']
+        }
+    if self.inputType.get() == 0:
+        model = self.inputStruct.get().clone()
+        proteinId = os.path.splitext(
+            os.path.basename(model.getFileName())
+        )[0]
+        prediction = predictions.get(proteinId)
 
-        if not self.mergeAlleles.get():
-          for allele, score in epiDic[(idxI, epitope)].items():
-            seqROI = SequenceROI(sequence=inpSeq, seqROI=roiSeq, roiIdx=idxs[0], roiIdx2=idxs[1])
-            seqROI._allelesMHCI = params.String(allele)
-            seqROI._epitopeType = params.String('MHC-I')
-            seqROI._source = params.String(method)
-            setattr(seqROI, method, params.Float(score))
+        if prediction is None:
+            raise ValueError(
+                f"No DeepLoc prediction found for Protein_ID '{proteinId}'"
+            )
 
-            outROIs.append(seqROI)
-        else:
-          alleles, scores = list(epiDic[(idxI, epitope)].keys()), list(epiDic[(idxI, epitope)].values())
-          allele, score = '/'.join(alleles), min(scores)
-          seqROI = SequenceROI(sequence=inpSeq, seqROI=roiSeq, roiIdx=idxs[0], roiIdx2=idxs[1])
-          seqROI._allelesMHCI = params.String(allele)
-          seqROI._epitopeType = params.String('MHC-I')
-          seqROI._source = params.String(method)
-          setattr(seqROI, method, params.Float(score))
+        model._localizations = String(str(prediction['localizations']))
+        model._signals = String(str(prediction['signals']))
+        model._membraneTypes = String(str(prediction['membraneTypes']))
 
-          outROIs.append(seqROI)
+        model._localizationPerc = String(str(outCsv[0]))
 
+        self._defineOutputs(outputAtomStruct=model)
     else:
-      # Each input ROI is labelled with the alleles found inside them
-      inROIs = [roi.clone() for roi in self.inputSequenceROIs.get()]
-      i, lens = 0, self.getLenghts()
-      for curROI in inROIs:
-        curAlleles, curScores = [], []
-        if len(curROI.getROISequence()) >= min(lens):
-          i += 1
-          roiId = str(i)
-          if roiId in epiDic:
-            for (idxI, epitope) in epiDic[roiId]:
-              alleles, scores = list(epiDic[roiId][(idxI, epitope)].keys()), list(epiDic[roiId][(idxI, epitope)].values())
-              curAlleles += alleles
-              curScores += scores
+        outputSet = SetOfAtomStructs.create(self._getPath())
+        for atomStruct in self.inputSet.get():
+            model = atomStruct.clone()
+            proteinId = os.path.splitext(os.path.basename(model.getFileName()))[0]
+            prediction = predictions.get(proteinId)
 
-        allele, score = '/'.join(curAlleles), min(curScores) if curScores else 0
-        curROI._allelesMHCI = params.String(allele)
-        curROI._sourceMHCI = params.String(method)
-        setattr(curROI, method, params.Float(score))
-        outROIs.append(curROI)
+            if prediction is None:
+                self.warning(
+                    f"No DeepLoc prediction found for "
+                    f"Protein_ID '{proteinId}'"
+                )
+                continue
 
-    if len(outROIs) > 0:
-      self._defineOutputs(outputROIs=outROIs)
+            model._localizations = String(str(prediction['localizations']))
+            model._signals = String(str(prediction['signals']))
+            model._membraneTypes = String(str(prediction['membraneTypes']))
+
+            outputSet._localizationPerc = String(str(outCsv[0]))
+
+            outputSet.append(model)
+
+        self._defineOutputs(outputAtomStructs=outputSet)
 
   ##################### UTILS #####################
 
-  def getAvailableAlleles(self):
-    methKey = self._mhciMethodsDic[self.getEnumText('method')]
-    alleDic = getAllMHCIAlleles(methKey, self.getEnumText('specie'))
-    return list(alleDic.keys())
+  def _summary(self):
+      summary = []
+      if self.inputType.get() == 0:
+          model = getattr(self, 'outputAtomStruct', None)
+          if model is not None:
+              if hasattr(model, '_localizations'):
+                  summary.append(
+                      f"*Localizations*: {model._localizations.get()}"
+                  )
+              if hasattr(model, '_signals'):
+                  summary.append(
+                      f"*Signals*: {model._signals.get()}"
+                  )
+              if hasattr(model, '_membraneTypes'):
+                  summary.append(
+                      f"*Membrane types*: {model._membraneTypes.get()}"
+                  )
+      else:
+          outputSet = getattr(self, 'outputAtomStructs', None)
+          if outputSet is not None:
+              for i, model in enumerate(outputSet):
+                  proteinId = os.path.splitext(
+                      os.path.basename(model.getFileName())
+                  )[0]
+                  localizations = (
+                      model._localizations.get()
+                      if hasattr(model, '_localizations')
+                      else 'N/A'
+                  )
+                  signals = (
+                      model._signals.get()
+                      if hasattr(model, '_signals')
+                      else 'N/A'
+                  )
+                  membraneTypes = (
+                      model._membraneTypes.get()
+                      if hasattr(model, '_membraneTypes')
+                      else 'N/A'
+                  )
+                  summary.append(
+                      f"*{proteinId}*:\n"
+                      f"    *Localizations*: {localizations}\n"
+                      f"    *Signals*: {signals}\n"
+                      f"    *Membrane types*: {membraneTypes}\n"
+                  )
+      return summary
 
-  def getSelectedAlleles(self):
-    '''Get list of alleles to perform the analysis on'''
-    if self.specie.get() != 3 or self.alleleGroup.get() == 3:
-      alList = self.alleleCustom.get().strip().split(', ')
+  def writeStructureFasta(self, atomStruct, outHandle):
+    fileName = atomStruct.getFileName()
+
+    if fileName.endswith(".cif"):
+        structure = MMCIFParser(QUIET=True).get_structure("protein", fileName)
     else:
-      alList = MHCI_alleles_dic[self.getEnumText('alleleGroup')]
-    return alList
+        structure = PDBParser(QUIET=True).get_structure("protein", fileName)
 
-  def filterAlleles(self, alDic, alList, lenList):
-    '''Filters the allowed alleles and lengths from alList and lenList according to alDic and return the allele and
-    length lists necessary to run predict_binding.py'''
-    fAL, fLL = [], []
-    for allele in alList:
-      for length in lenList:
-        if str(length) in alDic[allele]:
-          fAL.append(allele), fLL.append(str(length))
-    return fAL, fLL
-
-  def getMHCOutputFile(self):
-    return os.path.abspath(self._getExtraPath('mhc-I_results.tsv'))
-
-  def getRankIdx(self):
-    return 8 if self.selType.get() == IC50 else 9
-
-  def parseResults(self, oFile):
-    '''Parse the results in the raw_output.tsv file generated by TepiTools and returns a dictionary
-    as {seq_id: {(position, epitopeString): {allele: score}}}
-    '''
-    resAr = self.getResultsArray(oFile)
-
-    # Build the output from the selection
-    epiDic = {}
-    for row in resAr:
-      allele, seq_id, pos, _, _, peptide, _, _, ic50, rank = row[:10]
-      key = (int(pos), peptide)
-      if not seq_id in epiDic:
-        epiDic[seq_id] = {}
-      if not key in epiDic[seq_id]:
-        epiDic[seq_id][key] = {}
-
-      rankIdx = self.getRankIdx()
-      epiDic[seq_id][key][allele] = float(row[rankIdx])
-    return epiDic
+    ppb = PPBuilder()
+    seq = "".join(str(pp.get_sequence()) for pp in ppb.build_peptides(structure))
+    if not seq:
+        self.warning(f"Could not extract sequence from {fileName}")
+        return
+    seqId = os.path.splitext(os.path.basename(fileName))[0]
+    outHandle.write(f">{seqId}\n")
+    outHandle.write(f"{seq}\n")
