@@ -1,6 +1,6 @@
 # **************************************************************************
 # *
-# * Authors:     Blanca Pueche Granados (blanca.pueche@cnb.csic.es)
+# * Authors:     Blanca Pueche (blanca.pueche@cnb.csic.es)
 # *
 # * Unidad de  Bioinformatica of Centro Nacional de Biotecnologia , CSIC
 # *
