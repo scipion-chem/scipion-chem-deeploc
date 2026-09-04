@@ -29,7 +29,7 @@ from pyworkflow.tests import setupTestProject, DataSet, BaseTest
 # Scipion chem imports
 from pwchem.protocols import  ProtChemPrepareReceptor
 from pwchem.utils import assertHandle
-from pwem.protocols import ProtImportPdb
+from pwem.protocols import ProtImportPdb, ProtImportSequence
 from ..protocols import ProtDeepLoc
 
 
@@ -42,7 +42,10 @@ class TestDeepLoc(BaseTest):
 
         cls._runImportPDB()
         cls._runPrepareTarget()
-        cls._runDeepLoc()
+        cls._runDeepLocAtom()
+
+        cls._runImportSequence()
+        cls._runDeepLocSeq()
 
     @classmethod
     def _runImportPDB(cls):
@@ -62,7 +65,7 @@ class TestDeepLoc(BaseTest):
         cls.protPrepRec = protPrepRec
 
     @classmethod
-    def _runDeepLoc(cls):
+    def _runDeepLocAtom(cls):
         protDeepLoc = cls.newProtocol(
             ProtDeepLoc,
             inputType=0,
@@ -73,6 +76,32 @@ class TestDeepLoc(BaseTest):
         cls.proj.launchProtocol(protDeepLoc, wait=True)
         cls.protDeepLoc = protDeepLoc
 
+    @classmethod
+    def _runImportSequence(cls):
+        protImportSeq = cls.newProtocol(
+            ProtImportSequence,
+            inputSequenceName='User_seq',
+            inputProteinSequence=ProtImportSequence.IMPORT_FROM_UNIPROT,
+            uniProtSequence='P0DTC2'
+        )
+        cls.proj.launchProtocol(protImportSeq, wait=True)
+        cls.protImportSeq = protImportSeq
+
+    @classmethod
+    def _runDeepLocSeq(cls):
+        protDeepLoc2 = cls.newProtocol(
+            ProtDeepLoc,
+            inputType=2,
+            inputSeq=cls.protImportSeq.outputSequence,
+            cutoff=0.5
+        )
+
+        cls.proj.launchProtocol(protDeepLoc2, wait=True)
+        cls.protDeepLoc2 = protDeepLoc2
+
     def test(self):
         self._waitOutput(self.protDeepLoc, 'outputAtomStruct', sleepTime=10)
         assertHandle(self.assertIsNotNone, getattr(self.protDeepLoc, 'outputAtomStruct', None))
+
+        self._waitOutput(self.protDeepLoc2, 'outputSequence', sleepTime=10)
+        assertHandle(self.assertIsNotNone, getattr(self.protDeepLoc2, 'outputSequence', None))
