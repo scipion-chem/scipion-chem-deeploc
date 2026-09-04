@@ -147,8 +147,12 @@ class ProtDeepLoc(EMProtocol):
                   f"No DeepLoc prediction found for Protein_ID '{proteinId}'"
               )
 
+          residueCsv = self.getResidueCsv(proteinId, outPath)
           self._setPrediction(model, prediction)
           model._localizationPerc = String(str(outCsv[0]))
+
+          if residueCsv is not None:
+              model._residuePredictions = String(residueCsv)
 
           self._defineOutputs(outputAtomStruct=model)
 
@@ -172,7 +176,12 @@ class ProtDeepLoc(EMProtocol):
                   )
                   continue
 
+              residueCsv = self.getResidueCsv(proteinId, outPath)
               self._setPrediction(model, prediction)
+
+              if residueCsv is not None:
+                  model._residuePredictions = String(residueCsv)
+
               outputSet.append(model)
 
           outputSet._localizationPerc = String(str(outCsv[0]))
@@ -356,10 +365,13 @@ class ProtDeepLoc(EMProtocol):
     outHandle.write(f">{seqId}\n")
     outHandle.write(f"{seq}\n")
 
-  def _setPrediction(self, model, prediction):
-    model._localizations = String(str(prediction['localizations']))
-    model._signals = String(str(prediction['signals']))
-    model._membraneTypes = String(str(prediction['membraneTypes']))
+  def _setPrediction(self, model, prediction, residueCsv=None):
+      model._localizations = String(str(prediction['localizations']))
+      model._signals = String(str(prediction['signals']))
+      model._membraneTypes = String(str(prediction['membraneTypes']))
+
+      if residueCsv is not None:
+          model._residuePredictions = String(str(residueCsv))
 
   def getResiduePredictions(self, proteinId, outPath):
       proteinId = str(proteinId)
@@ -396,3 +408,21 @@ class ProtDeepLoc(EMProtocol):
   def _setResiduePredictions(self, model, residuePredictions):
       if residuePredictions:
           model.addAttributes(residuePredictions)
+
+  def getResidueCsv(self, proteinId, outPath):
+      proteinId = str(proteinId)
+      normalizedId = proteinId.lower().replace('.', '')
+
+      for filePath in glob.glob(os.path.join(outPath, 'alpha_*.csv')):
+          fileName = os.path.splitext(
+              os.path.basename(filePath)
+          )[0]
+
+          if fileName == f"alpha_{normalizedId}":
+              return filePath
+
+      self.warning(
+          f"No residue-level DeepLoc file found for "
+          f"Protein_ID '{proteinId}'"
+      )
+      return None
