@@ -33,6 +33,7 @@ from pyworkflow.protocol import params
 from Bio.PDB import PDBParser, MMCIFParser, PPBuilder
 
 from pwem.objects.data import AtomStruct, SetOfAtomStructs, Sequence, SetOfSequences
+from pwchem.objects import SequenceChem, SetOfSequencesChem
 
 from pwchem.__init__ import Plugin as pwchemPlugin
 
@@ -178,34 +179,51 @@ class ProtDeepLoc(EMProtocol):
 
           self._defineOutputs(outputAtomStructs=outputSet)
 
-      # Single Sequence
+      # Single SequenceChem
       elif self.inputType.get() == 2:
-          model = self.inputSeq.get().clone()
+          proteinId = str(self.inputSeq.get().getSeqName())
 
-          proteinId = model.getSeqName()
-
-          prediction = predictions.get(str(proteinId))
+          prediction = predictions.get(proteinId)
 
           if prediction is None:
               raise ValueError(
                   f"No DeepLoc prediction found for Protein_ID '{proteinId}'"
               )
 
+          attrFile = self._getExtraPath(
+              f"{proteinId}_attributes.txt"
+          )
+
+          model = SequenceChem()
+          model.copy(self.inputSeq.get())
+          model.setAttrFile(attrFile)
+
           self._setPrediction(model, prediction)
+
+          residuePredictions = self.getResiduePredictions(
+              proteinId,
+              outPath
+          )
+
+          self._setResiduePredictions(
+              model,
+              residuePredictions
+          )
+
           model._localizationPerc = String(str(outCsv[0]))
 
           self._defineOutputs(outputSequence=model)
 
-      # SetOfSequences
+      # SetOfSequencesChem
       elif self.inputType.get() == 3:
-          outputSet = SetOfSequences.create(self._getPath())
+          outputSet = SetOfSequencesChem.create(
+              outputPath=self._getPath()
+          )
 
           for sequence in self.inputSeqs.get():
-              model = sequence.clone()
+              proteinId = str(sequence.getSeqName())
 
-              proteinId = model.getSeqName()
-
-              prediction = predictions.get(str(proteinId))
+              prediction = predictions.get(proteinId)
 
               if prediction is None:
                   self.warning(
@@ -214,7 +232,26 @@ class ProtDeepLoc(EMProtocol):
                   )
                   continue
 
+              attrFile = self._getExtraPath(
+                  f"{proteinId}_attributes.txt"
+              )
+
+              model = SequenceChem()
+              model.copy(sequence)
+              model.setAttrFile(attrFile)
+
               self._setPrediction(model, prediction)
+
+              residuePredictions = self.getResiduePredictions(
+                  proteinId,
+                  outPath
+              )
+
+              self._setResiduePredictions(
+                  model,
+                  residuePredictions
+              )
+
               outputSet.append(model)
 
           outputSet._localizationPerc = String(str(outCsv[0]))
@@ -323,3 +360,39 @@ class ProtDeepLoc(EMProtocol):
     model._localizations = String(str(prediction['localizations']))
     model._signals = String(str(prediction['signals']))
     model._membraneTypes = String(str(prediction['membraneTypes']))
+
+  def getResiduePredictions(self, proteinId, outPath):
+      proteinId = str(proteinId)
+      normalizedId = proteinId.lower().replace('.', '')
+      csvFile = None
+
+      for filePath in glob.glob(os.path.join(outPath, 'alpha_*.csv')):
+          fileName = os.path.splitext(
+              os.path.basename(filePath)
+          )[0]
+
+          if fileName == f"alpha_{normalizedId}":
+              csvFile = filePath
+              break
+
+      if csvFile is None:
+          self.warning(
+              f"No residue-level DeepLoc file found for "
+              f"Protein_ID '{proteinId}'"
+          )
+          return {}
+      df = pd.read_csv(csvFile, sep=None, engine='python')
+      residuePredictions = {}
+      for column in df.columns:
+          if column == 'AA':
+              continue
+
+          residuePredictions[f'DeepLoc_{column}'] = (
+              df[column].tolist()
+          )
+
+      return residuePredictions
+
+  def _setResiduePredictions(self, model, residuePredictions):
+      if residuePredictions:
+          model.addAttributes(residuePredictions)
