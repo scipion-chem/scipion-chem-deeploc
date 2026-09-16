@@ -589,14 +589,6 @@ class ProtDeepLoc(EMProtocol):
           "Number of structure residues:",
           len(residueSpecs)
       )
-      print(
-          "First residue specs:",
-          residueSpecs[:10]
-      )
-      print(
-          "Last residue specs:",
-          residueSpecs[-10:]
-      )
 
       # ------------------------------------------------------------
       # Add DeepLoc attributes.
@@ -638,16 +630,6 @@ class ProtDeepLoc(EMProtocol):
               )
           )
 
-          print(
-              "First entries:",
-              list(attributeScoresDic.items())[:5]
-          )
-
-          print(
-              "Last entries:",
-              list(attributeScoresDic.items())[-5:]
-          )
-
           cifDic = addScipionAttribute(
               cifDic,
               attributeScoresDic,
@@ -655,18 +637,13 @@ class ProtDeepLoc(EMProtocol):
               recipient='residues'
           )
 
-          print(
-              "CIF keys after adding attribute:",
-              [
-                  k for k in cifDic.keys()
-                  if 'scipion' in k.lower()
-              ]
-          )
+      inputFile = model.getFileName()
+      baseName = os.path.splitext(
+          os.path.basename(inputFile)
+      )[0]
 
       outputFile = self._getExtraPath(
-          'outputStructureDeepLoc_{}.cif'.format(
-              model.getObjId()
-          )
+          '{}_deeploc.cif'.format(baseName)
       )
 
       ASH._writeLowLevel(
