@@ -223,6 +223,18 @@ class ProtDeepLoc(EMProtocol):
                       residuePredictions
                   )
 
+                  testDic = AtomicStructHandler().readLowLevel(
+                      model.getFileName()
+                  )
+
+                  print(
+                      "SCIPION KEYS:",
+                      [
+                          key for key in testDic
+                          if '_scipion_attributes' in key
+                      ]
+                  )
+
               outputSet.append(model)
 
           outputSet._localizationPerc = String(
@@ -399,22 +411,56 @@ class ProtDeepLoc(EMProtocol):
           f"    *Membrane types*: {membraneTypes}"
       )
 
+  def _getStructureResidueMapping(self, atomStruct):
+      fileName = atomStruct.getFileName()
+
+      if fileName.endswith(".cif"):
+          structure = MMCIFParser(
+              QUIET=True
+          ).get_structure("protein", fileName)
+      else:
+          structure = PDBParser(
+              QUIET=True
+          ).get_structure("protein", fileName)
+
+      ppb = PPBuilder()
+
+      residueMapping = []
+      sequenceParts = []
+
+      for pp in ppb.build_peptides(structure):
+          sequenceParts.append(str(pp.get_sequence()))
+
+          for residue in pp:
+              chainId = residue.get_parent().id
+              residueId = residue.id[1]
+
+              residueMapping.append(
+                  "{}:{}".format(chainId, residueId)
+              )
+
+      sequence = "".join(sequenceParts)
+
+      return sequence, residueMapping
+
   def writeStructureFasta(self, atomStruct, outHandle):
-    fileName = atomStruct.getFileName()
+      seq, residueMapping = self._getStructureResidueMapping(
+          atomStruct
+      )
 
-    if fileName.endswith(".cif"):
-        structure = MMCIFParser(QUIET=True).get_structure("protein", fileName)
-    else:
-        structure = PDBParser(QUIET=True).get_structure("protein", fileName)
+      if not seq:
+          self.warning(
+              f"Could not extract sequence from "
+              f"{atomStruct.getFileName()}"
+          )
+          return
 
-    ppb = PPBuilder()
-    seq = "".join(str(pp.get_sequence()) for pp in ppb.build_peptides(structure))
-    if not seq:
-        self.warning(f"Could not extract sequence from {fileName}")
-        return
-    seqId = os.path.splitext(os.path.basename(fileName))[0]
-    outHandle.write(f">{seqId}\n")
-    outHandle.write(f"{seq}\n")
+      seqId = os.path.splitext(
+          os.path.basename(atomStruct.getFileName())
+      )[0]
+
+      outHandle.write(f">{seqId}\n")
+      outHandle.write(f"{seq}\n")
 
   def writeSequenceFasta(self, sequence, outHandle):
     seq = sequence.getSequence()
@@ -507,7 +553,7 @@ class ProtDeepLoc(EMProtocol):
 
       ASH = AtomicStructHandler()
 
-      # Convert structure to CIF, following the SASA workflow
+      # Convert structure to CIF.
       cifFile = self._getTmpPath(
           'inputStruct_{}.cif'.format(model.getObjId())
       )
@@ -519,57 +565,64 @@ class ProtDeepLoc(EMProtocol):
 
       cifDic = ASH.readLowLevel(inpAS)
 
-      # Scipion residue specifications use:
-      #     chain:residue_number
-      #
-      # Use label_asym_id + label_seq_id, which in this CIF are:
-      #     A:1, A:2, A:3, ...
-      asymKey = next(
-          (key for key in cifDic if key.endswith('.label_asym_id')),
-          None
-      )
-      seqKey = next(
-          (key for key in cifDic if key.endswith('.label_seq_id')),
-          None
+      # ------------------------------------------------------------
+      # Get residues in exactly the same order used to create
+      # the FASTA sent to DeepLoc.
+      # ------------------------------------------------------------
+
+      seq, residueSpecs = self._getStructureResidueMapping(
+          model
       )
 
-      if asymKey is None or seqKey is None:
+      if not residueSpecs:
           self.warning(
-              "Could not find label_asym_id/label_seq_id in CIF."
+              "Could not determine structure residues."
           )
           return
 
-      chains = cifDic[asymKey]
-      residues = cifDic[seqKey]
-
-      # One entry per residue, not per atom
-      residueSpecs = []
-      seen = set()
-
-      for chain, residue in zip(chains, residues):
-          spec = '{}:{}'.format(chain, residue)
-
-          if spec not in seen:
-              residueSpecs.append(spec)
-              seen.add(spec)
-
-      # Add the DeepLoc attributes
       print("=== DeepLoc attribute debugging ===")
-      print("Residue prediction attributes:", residuePredictions.keys())
       print(
-          "Residue prediction lengths:",
-          {k: len(v) for k, v in residuePredictions.items()}
+          "Structure sequence length:",
+          len(seq)
       )
-      print("Number of structure residues:", len(residueSpecs))
-      print("First residue specs:", residueSpecs[:10])
+      print(
+          "Number of structure residues:",
+          len(residueSpecs)
+      )
+      print(
+          "First residue specs:",
+          residueSpecs[:10]
+      )
+      print(
+          "Last residue specs:",
+          residueSpecs[-10:]
+      )
+
+      # ------------------------------------------------------------
+      # Add DeepLoc attributes.
+      # ------------------------------------------------------------
+
       for attrName, values in residuePredictions.items():
 
           values = [str(v) for v in values]
 
+          print(
+              "Adding attribute:",
+              attrName
+          )
+          print(
+              "Number of DeepLoc values:",
+              len(values)
+          )
+          print(
+              "Number of structure residues:",
+              len(residueSpecs)
+          )
+
           if len(values) != len(residueSpecs):
               self.warning(
                   "DeepLoc attribute '%s' has %d values, "
-                  "but the structure contains %d residues."
+                  "but the structure sequence contains %d residues."
                   % (
                       attrName,
                       len(values),
@@ -579,20 +632,20 @@ class ProtDeepLoc(EMProtocol):
               continue
 
           attributeScoresDic = dict(
-              zip(residueSpecs, values)
+              zip(
+                  residueSpecs,
+                  values
+              )
           )
 
           print(
-              "Adding DeepLoc attribute:",
-              attrName
-          )
-          print(
-              "Number of residues:",
-              len(attributeScoresDic)
-          )
-          print(
               "First entries:",
               list(attributeScoresDic.items())[:5]
+          )
+
+          print(
+              "Last entries:",
+              list(attributeScoresDic.items())[-5:]
           )
 
           cifDic = addScipionAttribute(
@@ -604,16 +657,18 @@ class ProtDeepLoc(EMProtocol):
 
           print(
               "CIF keys after adding attribute:",
-              [k for k in cifDic.keys() if 'scipion' in k.lower()]
+              [
+                  k for k in cifDic.keys()
+                  if 'scipion' in k.lower()
+              ]
           )
 
       outputFile = self._getExtraPath(
-          'outputStructureDeepLoc_{}.cif'.format(model.getObjId())
+          'outputStructureDeepLoc_{}.cif'.format(
+              model.getObjId()
+          )
       )
 
-      print("Final CIF keys:")
-      for key in cifDic:
-          print("  ", key)
       ASH._writeLowLevel(
           outputFile,
           cifDic
