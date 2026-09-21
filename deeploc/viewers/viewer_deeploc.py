@@ -206,30 +206,19 @@ class DeepLocStructureViewer(SASAStructureViewer):
     def _defineParams(self, form):
 
         # --------------------------------------------------------------
-        # Localization
-        # --------------------------------------------------------------
-
-        if (
-            hasattr(self.protocol, 'outputSequence')
-            or hasattr(self.protocol, 'outputSequences')
-            or hasattr(self.protocol, 'outputAtomStruct')
-            or hasattr(self.protocol, 'outputAtomStructs')
-        ):
-            form.addParam(
-                'viewLocalization',
-                params.LabelParam,
-                label='Display localization probabilities: ',
-                help='Display the DeepLoc predicted localization '
-                     'probabilities.'
-            )
-
-        # --------------------------------------------------------------
         # Single sequence
         # --------------------------------------------------------------
 
         if hasattr(self.protocol, 'outputSequence'):
             form.addSection(
                 label='Visualization of DeepLoc residue importance'
+            )
+
+            form.addParam(
+                'viewLocalization',
+                params.LabelParam,
+                label='Display localization probabilities: ',
+                help='Display the DeepLoc predicted localization probabilities.'
             )
 
             form.addParam(
@@ -256,6 +245,13 @@ class DeepLocStructureViewer(SASAStructureViewer):
             )
 
             form.addParam(
+                'viewLocalization',
+                params.LabelParam,
+                label='Display localization probabilities: ',
+                help='Display the DeepLoc predicted localization probabilities.'
+            )
+
+            form.addParam(
                 'viewSequences',
                 params.LabelParam,
                 label='View all sequences: ',
@@ -266,8 +262,7 @@ class DeepLocStructureViewer(SASAStructureViewer):
                 'viewSequencesAttribute',
                 params.LabelParam,
                 label='Display residue attribute for all sequences: ',
-                help='Display the residue attribute for all output '
-                     'sequences.'
+                help='Display the residue attribute for all output sequences.'
             )
 
         # --------------------------------------------------------------
@@ -275,6 +270,13 @@ class DeepLocStructureViewer(SASAStructureViewer):
         # --------------------------------------------------------------
 
         if hasattr(self.protocol, 'outputAtomStruct'):
+            form.addParam(
+                'viewLocalization',
+                params.LabelParam,
+                label='Display localization probabilities: ',
+                help='Display the DeepLoc predicted localization probabilities.'
+            )
+
             ChimeraAttributeViewer._defineParams(self, form)
             self._defineColorScale(form)
 
@@ -283,6 +285,13 @@ class DeepLocStructureViewer(SASAStructureViewer):
         # --------------------------------------------------------------
 
         if hasattr(self.protocol, 'outputAtomStructs'):
+            form.addParam(
+                'viewLocalization',
+                params.LabelParam,
+                label='Display localization probabilities: ',
+                help='Display the DeepLoc predicted localization probabilities.'
+            )
+
             self._defineAtomStructSetParams(form)
 
     def _defineColorScale(self, form):
@@ -362,13 +371,13 @@ class DeepLocStructureViewer(SASAStructureViewer):
 
     def _getLocalizationObject(self):
         if hasattr(self.protocol, 'outputSequence'):
-            return self.protocol.outputSequence
+            return self.getOutSequences()
 
         if hasattr(self.protocol, 'outputSequences'):
             return self.protocol.outputSequences
 
         if hasattr(self.protocol, 'outputAtomStruct'):
-            return self.protocol.outputAtomStruct
+            return self.getAtomStructObject()
 
         if hasattr(self.protocol, 'outputAtomStructs'):
             return self.protocol.outputAtomStructs
