@@ -211,7 +211,7 @@ class DeepLocStructureViewer(SASAStructureViewer):
 
         if hasattr(self.protocol, 'outputSequence'):
             form.addSection(
-                label='Visualization of DeepLoc residue importance'
+                label='DeepLoc viewer'
             )
 
             form.addParam(
@@ -241,7 +241,7 @@ class DeepLocStructureViewer(SASAStructureViewer):
 
         if hasattr(self.protocol, 'outputSequences'):
             form.addSection(
-                label='Visualization of DeepLoc residue importance'
+                label='DeepLoc viewer'
             )
 
             form.addParam(
@@ -270,6 +270,9 @@ class DeepLocStructureViewer(SASAStructureViewer):
         # --------------------------------------------------------------
 
         if hasattr(self.protocol, 'outputAtomStruct'):
+            form.addSection(
+                label='DeepLoc viewer'
+            )
             form.addParam(
                 'viewLocalization',
                 params.LabelParam,
@@ -285,6 +288,9 @@ class DeepLocStructureViewer(SASAStructureViewer):
         # --------------------------------------------------------------
 
         if hasattr(self.protocol, 'outputAtomStructs'):
+            form.addSection(
+                label='DeepLoc viewer'
+            )
             form.addParam(
                 'viewLocalization',
                 params.LabelParam,
