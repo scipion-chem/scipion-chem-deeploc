@@ -23,9 +23,11 @@
 # * e-mail address 'scipion@cnb.csic.es'
 # *
 # **************************************************************************
+
 import os
 import numpy as np
 import matplotlib.pyplot as plt
+import pandas as pd
 
 from matplotlib.widgets import Button
 
@@ -40,6 +42,24 @@ from pwchem.viewers.viewers_sequences import SequenceAliView
 
 from ..protocols.protocol_deeploc import ProtDeepLoc
 from pwem.viewers import ChimeraAttributeViewer
+
+
+LOCALIZATION_COLUMNS = [
+    'Cytoplasm',
+    'Nucleus',
+    'Extracellular',
+    'Cell membrane',
+    'Mitochondrion',
+    'Plastid',
+    'Endoplasmic reticulum',
+    'Lysosome/Vacuole',
+    'Golgi apparatus',
+    'Peroxisome',
+    'Peripheral',
+    'Transmembrane',
+    'Lipid anchor',
+    'Soluble'
+]
 
 
 def plotInteractive(data, histogram=False):
@@ -112,12 +132,96 @@ def plotAtomStructSequenceAttributesInteractive(structureData):
     plotInteractive(structureData)
 
 
+def plotLocalizationHistogramFromDataFrame(df):
+    localizationColumns = [
+        column for column in LOCALIZATION_COLUMNS
+        if column in df.columns
+    ]
+
+    if 'Protein_ID' not in df.columns:
+        raise ValueError(
+            "The localization file must contain a 'Protein_ID' column."
+        )
+
+    if not localizationColumns:
+        raise ValueError(
+            'No DeepLoc localization probability columns were found.'
+        )
+
+    proteinIds = df['Protein_ID'].astype(str).tolist()
+
+    nProteins = len(proteinIds)
+    nLocalizations = len(localizationColumns)
+
+    if nProteins == 0:
+        return
+
+    x = np.arange(nLocalizations)
+    width = 0.8 / nProteins
+
+    fig, ax = plt.subplots(figsize=(14, 7))
+
+    for i, proteinId in enumerate(proteinIds):
+        values = df.iloc[i][localizationColumns].astype(float).values
+
+        offset = (
+            i - (nProteins - 1) / 2
+        ) * width
+
+        ax.bar(
+            x + offset,
+            values,
+            width,
+            label=proteinId
+        )
+
+    ax.set_xlabel('Localization')
+    ax.set_ylabel('Probability')
+    ax.set_title('DeepLoc localization probabilities')
+
+    ax.set_xticks(x)
+    ax.set_xticklabels(
+        localizationColumns,
+        rotation=45,
+        ha='right'
+    )
+
+    ax.set_ylim(0, 1)
+    ax.legend(title='Protein ID')
+
+    plt.tight_layout()
+    plt.show()
+
+
+def plotLocalizationHistogram(csvFile):
+    df = pd.read_csv(csvFile)
+    plotLocalizationHistogramFromDataFrame(df)
+
+
 class DeepLocStructureViewer(SASAStructureViewer):
 
     _targets = [ProtDeepLoc]
     _label = 'DeepLoc viewer'
 
     def _defineParams(self, form):
+
+        # --------------------------------------------------------------
+        # Localization
+        # --------------------------------------------------------------
+
+        if (
+            hasattr(self.protocol, 'outputSequence')
+            or hasattr(self.protocol, 'outputSequences')
+            or hasattr(self.protocol, 'outputAtomStruct')
+            or hasattr(self.protocol, 'outputAtomStructs')
+        ):
+            form.addParam(
+                'viewLocalization',
+                params.LabelParam,
+                label='Display localization probabilities: ',
+                help='Display the DeepLoc predicted localization '
+                     'probabilities.'
+            )
 
         # --------------------------------------------------------------
         # Single sequence
@@ -162,7 +266,8 @@ class DeepLocStructureViewer(SASAStructureViewer):
                 'viewSequencesAttribute',
                 params.LabelParam,
                 label='Display residue attribute for all sequences: ',
-                help='Display the residue attribute for all output sequences.'
+                help='Display the residue attribute for all output '
+                     'sequences.'
             )
 
         # --------------------------------------------------------------
@@ -193,6 +298,18 @@ class DeepLocStructureViewer(SASAStructureViewer):
 
     def _getVisualizeDict(self):
         visDic = {}
+
+        # --------------------------------------------------------------
+        # Localization
+        # --------------------------------------------------------------
+
+        if (
+            hasattr(self.protocol, 'outputSequence')
+            or hasattr(self.protocol, 'outputSequences')
+            or hasattr(self.protocol, 'outputAtomStruct')
+            or hasattr(self.protocol, 'outputAtomStructs')
+        ):
+            visDic['viewLocalization'] = self._showLocalization
 
         # --------------------------------------------------------------
         # Single sequence
@@ -238,6 +355,55 @@ class DeepLocStructureViewer(SASAStructureViewer):
             })
 
         return visDic
+
+    # ------------------------------------------------------------------
+    # Localization
+    # ------------------------------------------------------------------
+
+    def _getLocalizationObject(self):
+        if hasattr(self.protocol, 'outputSequence'):
+            return self.protocol.outputSequence
+
+        if hasattr(self.protocol, 'outputSequences'):
+            return self.protocol.outputSequences
+
+        if hasattr(self.protocol, 'outputAtomStruct'):
+            return self.protocol.outputAtomStruct
+
+        if hasattr(self.protocol, 'outputAtomStructs'):
+            return self.protocol.outputAtomStructs
+
+        return self.protocol
+
+    def _getLocalizationFile(self):
+        obj = self._getLocalizationObject()
+
+        localizationFile = getattr(
+            obj,
+            '_localizationPerc',
+            None
+        )
+
+        if hasattr(localizationFile, 'get'):
+            localizationFile = localizationFile.get()
+
+        if not localizationFile:
+            raise FileNotFoundError(
+                'No DeepLoc localization probability file was found.'
+            )
+
+        if not os.path.exists(localizationFile):
+            raise FileNotFoundError(
+                'DeepLoc localization probability file not found: '
+                '{}'.format(localizationFile)
+            )
+
+        return localizationFile
+
+    def _showLocalization(self, paramName=None):
+        localizationFile = self._getLocalizationFile()
+
+        plotLocalizationHistogram(localizationFile)
 
     # ------------------------------------------------------------------
     # Single sequence
@@ -306,9 +472,9 @@ class DeepLocStructureViewer(SASAStructureViewer):
 
         plotSequenceAttributesInteractive(sequenceData)
 
-        # ------------------------------------------------------------------
-        # Set of AtomStructs
-        # ------------------------------------------------------------------
+    # ------------------------------------------------------------------
+    # Set of AtomStructs
+    # ------------------------------------------------------------------
 
     def _defineAtomStructSetParams(self, form):
         form.addSection(label='Visualization of structure set')
@@ -392,10 +558,12 @@ class DeepLocStructureViewer(SASAStructureViewer):
 
     def _showAtomStructAttribute(self, paramName=None):
         self._atomStruct = self._getSelectedAtomStruct()
+
         return self._showHistogram(paramName)
 
     def _showAtomStructSequenceAttribute(self, paramName=None):
         self._atomStruct = self._getSelectedAtomStruct()
+
         return self._showSequence(paramName)
 
     def getAtomStructObject(self):
@@ -406,8 +574,8 @@ class DeepLocStructureViewer(SASAStructureViewer):
 
     def getEnumText(self, paramName):
         if (
-                paramName == 'attrName'
-                and hasattr(self.protocol, 'outputAtomStructs')
+            paramName == 'attrName'
+            and hasattr(self.protocol, 'outputAtomStructs')
         ):
             return self.protocol._ATTRNAME
 
