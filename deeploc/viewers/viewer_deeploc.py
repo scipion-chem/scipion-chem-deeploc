@@ -589,3 +589,12 @@ class DeepLocStructureViewer(SASAStructureViewer):
             return self.protocol._ATTRNAME
 
         return super().getEnumText(paramName)
+
+    def getOutSequences(self):
+        if hasattr(self.protocol, 'outputSequence'):
+            return self.protocol.outputSequence
+
+        if hasattr(self.protocol, 'outputSequences'):
+            return self.protocol.outputSequences
+
+        return None
